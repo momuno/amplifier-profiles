@@ -129,11 +129,12 @@ def compile_profile_to_mount_plan(
                 # Log warning but continue loading other agents
                 logger.warning(f"Failed to load agent '{agent_name}': {e}")
 
-        mount_plan["agents"] = agents_list
+        # Transform agents list to dict for runtime (keyed by name)
+        mount_plan["agents"] = {agent["name"]: agent for agent in agents_list}
         logger.info(f"Loaded {len(agents_list)} agents into mount plan")
     else:
-        # Ensure agents is always a list (even if empty)
-        mount_plan["agents"] = []
+        # Ensure agents is always a dict (even if empty)
+        mount_plan["agents"] = {}
 
     return mount_plan
 
