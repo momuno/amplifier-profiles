@@ -179,38 +179,43 @@ class TestAgentsConfig:
 
     def test_agents_config_empty(self):
         """Create empty agents config."""
-        config = AgentsConfig(dirs=None, include=None)
+        config = AgentsConfig(items=[], dirs=None, include_only=None)
+        assert config.items == []
         assert config.dirs is None
-        assert config.include is None
+        assert config.include_only is None
 
     def test_agents_config_with_dirs(self):
         """Create agents config with search directories."""
-        config = AgentsConfig(dirs=["~/.amplifier/agents", "./agents"], include=None)
+        config = AgentsConfig(dirs=["~/.amplifier/agents", "./agents"])
         assert config.dirs == ["~/.amplifier/agents", "./agents"]
 
-    def test_agents_config_with_include(self):
-        """Create agents config with include filter."""
-        config = AgentsConfig(dirs=None, include=["zen-architect", "bug-hunter"])
-        assert config.include == ["zen-architect", "bug-hunter"]
+    def test_agents_config_with_include_only(self):
+        """Create agents config with include-only filter."""
+        config = AgentsConfig(include_only=["zen-architect", "bug-hunter"])
+        assert config.include_only == ["zen-architect", "bug-hunter"]
 
     def test_agents_config_complete(self):
         """Create agents config with all fields."""
+        from amplifier_profiles.schema import AgentConfig
+
         config = AgentsConfig(
+            items=[AgentConfig(name="agent-one"), AgentConfig(name="agent-two")],
             dirs=["./agents"],
-            include=["agent-one", "agent-two"],
+            include_only=["agent-one", "agent-two"],
         )
+        assert len(config.items) == 2
         assert config.dirs == ["./agents"]
-        assert config.include == ["agent-one", "agent-two"]
+        assert config.include_only == ["agent-one", "agent-two"]
 
     def test_agents_config_frozen(self):
         """Verify agents config is immutable."""
-        config = AgentsConfig(dirs=["./agents"], include=None)
+        config = AgentsConfig(dirs=["./agents"])
         with pytest.raises(ValidationError, match="frozen"):
             config.dirs = ["changed"]
 
     def test_no_inline_field(self):
         """Verify AgentsConfig has no 'inline' field (YAGNI)."""
-        config = AgentsConfig(dirs=None, include=None)
+        config = AgentsConfig(items=[], dirs=None)
         assert not hasattr(config, "inline")
 
 
@@ -242,11 +247,11 @@ class TestProfile:
                 orchestrator=ModuleConfig(module="loop-basic", source=None, config=None),
                 context=ModuleConfig(module="context-simple", source=None, config=None),
             ),
-            agents=AgentsConfig(dirs=["./agents"], include=["agent-one"]),
+            agents=AgentsConfig(dirs=["./agents"], include_only=["agent-one"]),
         )
         assert profile.agents is not None
         assert profile.agents.dirs == ["./agents"]
-        assert profile.agents.include == ["agent-one"]
+        assert profile.agents.include_only == ["agent-one"]
 
     def test_profile_with_providers(self):
         """Create profile with provider modules."""

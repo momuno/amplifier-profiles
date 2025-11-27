@@ -96,13 +96,26 @@ def compile_profile_to_mount_plan(
     if base.agents and agent_loader is not None:
         agents_list = []
 
-        # Determine which agents to load
-        if base.agents.include:
-            agent_names_to_load = base.agents.include
-        elif base.agents.dirs:
-            agent_names_to_load = agent_loader.list_agents()
-        else:
-            agent_names_to_load = []
+        # Start with explicit items from profile
+        agent_names_to_load = [item.name for item in base.agents.items]
+
+        # Add discovered agents from dirs if specified
+        if base.agents.dirs:
+            discovered = agent_loader.list_agents()
+            agent_names_to_load.extend(discovered)
+
+        # Apply include-only filter if specified
+        if base.agents.include_only:
+            agent_names_to_load = [name for name in agent_names_to_load if name in base.agents.include_only]
+
+        # Deduplicate while preserving order
+        seen = set()
+        deduplicated = []
+        for name in agent_names_to_load:
+            if name not in seen:
+                seen.add(name)
+                deduplicated.append(name)
+        agent_names_to_load = deduplicated
 
         # Load agents from app-configured search locations
         for agent_name in agent_names_to_load:
