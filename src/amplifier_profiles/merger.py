@@ -12,16 +12,18 @@ Key principles:
 This supports the "merge-then-validate" pattern where validation happens
 after the complete inheritance chain is merged.
 """
+import logging
 
 from typing import Any
 
+logger = logging.getLogger(__name__)
 
 def merge_profile_dicts(parent: dict[str, Any], child: dict[str, Any]) -> dict[str, Any]:
     """
     Deep merge child profile dictionary into parent profile dictionary.
 
     Merge rules by key:
-    - 'hooks', 'tools', 'providers': Merge module lists by module ID
+    - 'hooks', 'tools', 'providers', 'agents': Merge module lists by ID/name
     - Dict values: Recursive deep merge
     - Other values: Child overrides parent
 
@@ -57,8 +59,42 @@ def merge_profile_dicts(parent: dict[str, Any], child: dict[str, Any]) -> dict[s
         if key not in merged:
             # New key in child - just add it
             merged[key] = child_value
-        elif key in ("hooks", "tools", "providers"):
-            # Module lists - merge by module ID
+        elif key in ("hooks", "tools", "providers", "agents"):
+            # Module lists - merge by module ID (tools/providers/hooks) or name (agents)
+            # Special case: agents.include is a filter operation, not a merge
+            if key == "agents" and isinstance(child_value, dict) and "include" in child_value:
+                # Child specifies agents.include: [...] - this is FILTER intent
+                include_list = child_value.get("include")
+                if isinstance(include_list, list) and include_list and isinstance(merged[key], list):
+                    # Filter parent agents list to only included names
+                    filtered_agents = [
+                        agent for agent in merged[key]
+                        if agent.get("name") in include_list
+                    ]
+                    merged[key] = filtered_agents
+                    logger.debug(f"Filtered agents to: {[a.get('name') for a in filtered_agents]}")
+                else:
+                    # Empty or invalid include list, inherit all
+                    # merged[key] stays as parent's value
+                    pass
+            else:
+                # Normal module list merge by ID/name
+                merged[key] = merge_module_lists(merged[key], child_value)
+        elif key == "agents":
+            # DEPRECATED PATH: agents as dict (backward compatibility)
+            # This branch handles old dict structure during transition
+            if isinstance(merged[key], dict) and isinstance(child_value, dict):
+                # Both are dicts - log deprecation warning
+                logger.warning(
+                    "DEPRECATED: agents as dict is deprecated. "
+                    "Please migrate to list structure. "
+                    "See migration guide: docs/MIGRATION_AGENTS_TO_LIST.md"
+                )
+                # Deep merge for backward compatibility
+                merged[key] = merge_dicts(merged[key], child_value)
+            else:
+                # Type mismatch - child overrides (forces migration)
+                merged[key] = child_value
             merged[key] = merge_module_lists(merged[key], child_value)
         elif isinstance(child_value, dict) and isinstance(merged[key], dict):
             # Both are dicts - recursive deep merge
@@ -74,7 +110,7 @@ def merge_module_lists(parent_list: list[dict[str, Any]], child_list: list[dict[
     """
     Merge module lists by module ID, deep-merging configs.
 
-    Module lists (hooks, tools, providers) are matched by 'module' field.
+    Module lists (hooks, tools, providers, agents) are matched by 'module' or 'name' field.
     When the same module appears in both lists, their configs are deep-merged.
 
     Args:
@@ -96,15 +132,22 @@ def merge_module_lists(parent_list: list[dict[str, Any]], child_list: list[dict[
     # Build dict indexed by module ID for efficient lookup
     result: dict[str, dict[str, Any]] = {}
 
+    # Determine ID field: "module" for tools/providers/hooks, "name" for agents
+    id_field = "module"
+    if parent_list and "name" in parent_list[0]:
+        id_field = "name"
+    elif child_list and "name" in child_list[0]:
+        id_field = "name"
+
     # Add all parent modules
     for item in parent_list:
-        module_id = item.get("module")
+        module_id = item.get(id_field)
         if module_id:
             result[module_id] = item.copy()
 
     # Merge or add child modules
     for child_item in child_list:
-        module_id = child_item.get("module")
+        module_id = child_item.get(id_field)
         if not module_id:
             # No module ID - can't merge, just append
             continue

@@ -67,7 +67,7 @@ def compile_profile_to_mount_plan(
         "providers": [],
         "tools": [],
         "hooks": [],
-        "agents": {},
+        "agents": [],
     }
 
     # Add sources if present
@@ -94,7 +94,7 @@ def compile_profile_to_mount_plan(
     # Load agents using agent loading system (if agent_loader provided by app)
     # Per KERNEL_PHILOSOPHY: App injects policy (where to search) via agent_loader
     if base.agents and agent_loader is not None:
-        agents_dict = {}
+        agents_list = []
 
         # Determine which agents to load
         if base.agents.include:
@@ -108,14 +108,19 @@ def compile_profile_to_mount_plan(
         for agent_name in agent_names_to_load:
             try:
                 agent = agent_loader.load_agent(agent_name)
-                agents_dict[agent_name] = agent.to_mount_plan_fragment()
+                agent_config = agent.to_mount_plan_fragment()
+                agent_config["name"] = agent_name
+                agents_list.append(agent_config)
                 logger.debug(f"Loaded agent: {agent_name}")
             except Exception as e:
                 # Log warning but continue loading other agents
                 logger.warning(f"Failed to load agent '{agent_name}': {e}")
 
-        mount_plan["agents"] = agents_dict
-        logger.info(f"Loaded {len(agents_dict)} agents into mount plan")
+        mount_plan["agents"] = agents_list
+        logger.info(f"Loaded {len(agents_list)} agents into mount plan")
+    else:
+        # Ensure agents is always a list (even if empty)
+        mount_plan["agents"] = []
 
     return mount_plan
 
