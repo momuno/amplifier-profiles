@@ -59,43 +59,16 @@ def merge_profile_dicts(parent: dict[str, Any], child: dict[str, Any]) -> dict[s
         if key not in merged:
             # New key in child - just add it
             merged[key] = child_value
-        elif key in ("hooks", "tools", "providers", "agents"):
-            # Module lists - merge by module ID (tools/providers/hooks) or name (agents)
-            # Special case: agents.include is a filter operation, not a merge
-            if key == "agents" and isinstance(child_value, dict) and "include" in child_value:
-                # Child specifies agents.include: [...] - this is FILTER intent
-                include_list = child_value.get("include")
-                if isinstance(include_list, list) and include_list and isinstance(merged[key], list):
-                    # Filter parent agents list to only included names
-                    filtered_agents = [
-                        agent for agent in merged[key]
-                        if agent.get("name") in include_list
-                    ]
-                    merged[key] = filtered_agents
-                    logger.debug(f"Filtered agents to: {[a.get('name') for a in filtered_agents]}")
-                else:
-                    # Empty or invalid include list, inherit all
-                    # merged[key] stays as parent's value
-                    pass
+        elif key in ("hooks", "tools", "providers"):
+            # Module lists - merge by module ID
+            # Special case: explicit empty list means "don't inherit anything"
+            if isinstance(child_value, list) and len(child_value) == 0:
+                merged[key] = []
             else:
-                # Normal module list merge by ID/name
                 merged[key] = merge_module_lists(merged[key], child_value)
         elif key == "agents":
-            # DEPRECATED PATH: agents as dict (backward compatibility)
-            # This branch handles old dict structure during transition
-            if isinstance(merged[key], dict) and isinstance(child_value, dict):
-                # Both are dicts - log deprecation warning
-                logger.warning(
-                    "DEPRECATED: agents as dict is deprecated. "
-                    "Please migrate to list structure. "
-                    "See migration guide: docs/MIGRATION_AGENTS_TO_LIST.md"
-                )
-                # Deep merge for backward compatibility
-                merged[key] = merge_dicts(merged[key], child_value)
-            else:
-                # Type mismatch - child overrides (forces migration)
-                merged[key] = child_value
-            merged[key] = merge_module_lists(merged[key], child_value)
+            # Special handling for agents structure
+            merged[key] = merge_agents_config(merged.get(key), child_value)
         elif isinstance(child_value, dict) and isinstance(merged[key], dict):
             # Both are dicts - recursive deep merge
             merged[key] = merge_dicts(merged[key], child_value)
@@ -231,5 +204,98 @@ def merge_dicts(parent: dict[str, Any], child: dict[str, Any]) -> dict[str, Any]
         else:
             # Scalar, list, or type mismatch - child overrides
             merged[key] = value
+
+    return merged
+
+
+def merge_agents_config(parent: dict[str, Any] | None, child: Any) -> dict[str, Any]:
+    """
+    Merge agents configuration with special handling for filtering and directory discovery.
+
+    Merge rules:
+    - child is [] or empty: Reset to nothing (no agents, no dirs)
+    - child has no agents key: Inherit everything from parent
+    - child has agents dict:
+      - items: Merge by name (like module lists)
+      - dirs: Append to parent's dirs
+      - include-only: Override parent's include-only
+      - After merge, apply include-only filter if present
+
+    Args:
+        parent: Parent agents config dict (or None)
+        child: Child agents config (dict, list, or other)
+
+    Returns:
+        Merged agents config dict
+
+    Example:
+        >>> parent = {
+        ...     "items": [{"name": "zen-architect"}, {"name": "bug-hunter"}],
+        ...     "dirs": ["./agents"]
+        ... }
+        >>> child = {
+        ...     "items": [{"name": "beads-expert"}],
+        ...     "include-only": ["zen-architect", "beads-expert"]
+        ... }
+        >>> result = merge_agents_config(parent, child)
+        >>> # result["items"] has all 3 agents, but include-only filters to 2
+    """
+    # Handle reset case: explicit empty list or empty dict means "no agents"
+    if isinstance(child, list) and len(child) == 0:
+        return {"items": [], "dirs": None, "include-only": None}
+    if isinstance(child, dict) and not child:
+        return {"items": [], "dirs": None, "include-only": None}
+
+    # If no parent, child becomes the entire config
+    if not parent:
+        if isinstance(child, dict):
+            return child
+        # Shouldn't happen, but handle gracefully
+        return {"items": [], "dirs": None, "include-only": None}
+
+    # Both parent and child exist - merge them
+    if not isinstance(child, dict):
+        # Child is not a dict (shouldn't happen with schema validation)
+        return parent
+
+    merged: dict[str, Any] = {}
+
+    # Merge items (agent definitions) by name
+    parent_items = parent.get("items", [])
+    child_items = child.get("items", [])
+    if child_items or parent_items:
+        merged["items"] = merge_module_lists(parent_items, child_items)
+    else:
+        merged["items"] = []
+
+    # Merge dirs (append lists)
+    parent_dirs = parent.get("dirs", []) or []
+    child_dirs = child.get("dirs", []) or []
+    if child_dirs or parent_dirs:
+        # Combine and deduplicate while preserving order
+        seen = set()
+        combined_dirs = []
+        for d in parent_dirs + child_dirs:
+            if d not in seen:
+                seen.add(d)
+                combined_dirs.append(d)
+        merged["dirs"] = combined_dirs if combined_dirs else None
+    else:
+        merged["dirs"] = None
+
+    # include-only: child overrides parent (doesn't merge)
+    if "include-only" in child or "include_only" in child:
+        merged["include-only"] = child.get("include-only") or child.get("include_only")
+    elif "include-only" in parent or "include_only" in parent:
+        merged["include-only"] = parent.get("include-only") or parent.get("include_only")
+    else:
+        merged["include-only"] = None
+
+    # Apply include-only filter if present
+    include_only = merged.get("include-only")
+    if include_only and isinstance(include_only, list) and merged["items"]:
+        filtered_items = [item for item in merged["items"] if item.get("name") in include_only]
+        merged["items"] = filtered_items
+        logger.debug(f"Filtered agents to: {[a.get('name') for a in filtered_items]}")
 
     return merged

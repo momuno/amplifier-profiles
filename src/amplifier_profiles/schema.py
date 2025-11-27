@@ -49,23 +49,38 @@ class SessionConfig(BaseModel):
     context: ModuleConfig = Field(..., description="Context module configuration")
 
 
-class AgentsConfig(BaseModel):
-    """Configuration for agent discovery and filtering (NO inline support - YAGNI removed)."""
+class AgentConfig(BaseModel):
+    """Configuration for a single agent."""
 
     model_config = ConfigDict(frozen=True)
 
-    dirs: list[str] | None = Field(None, description="Directories to search for agent .md files")
-    include: list[str] | None = Field(None, description="Specific agents to include (filters discovered agents)")
+    name: str = Field(..., description="Agent name/identifier")
+    source: str | dict[str, Any] | None = Field(
+        None, description="Agent source (git URL, file path, or package name). String or object format."
+    )
+    config: dict[str, Any] | None = Field(None, description="Agent-specific configuration")
+
+
+class AgentsConfig(BaseModel):
+    """Agent discovery and filtering configuration."""
+
+    model_config = ConfigDict(frozen=True)
+
+    items: list[AgentConfig] = Field(default_factory=list, description="Explicit agent definitions")
+    dirs: list[str] | None = Field(None, description="Directories to discover agent .md files")
+    include_only: list[str] | None = Field(
+        None, alias="include-only", description="Filter: only these agents are active (discards all others)"
+    )
 
 
 class Profile(BaseModel):
     """Complete profile specification (YAGNI cleaned - no task/logging/ui fields)."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, populate_by_name=True)
 
     profile: ProfileMetadata
     session: SessionConfig
-    agents: AgentsConfig | None = Field(None, description="Agent discovery and filtering")
+    agents: AgentsConfig | None = Field(None, description="Agent configuration with filtering")
     providers: list[ModuleConfig] = Field(default_factory=list)
     tools: list[ModuleConfig] = Field(default_factory=list)
     hooks: list[ModuleConfig] = Field(default_factory=list)

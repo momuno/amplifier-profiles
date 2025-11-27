@@ -351,3 +351,111 @@ class TestMergeProfileDicts:
         # Session fully inherited
         assert result["session"]["orchestrator"]["module"] == "loop-basic"
         assert result["session"]["context"]["module"] == "context-simple"
+
+    def test_agents_empty_list_resets(self):
+        """Explicit empty list for agents resets to nothing."""
+        parent = {
+            "agents": {
+                "items": [
+                    {"name": "zen-architect", "source": "git+arch"},
+                    {"name": "bug-hunter", "source": "git+bug"},
+                ],
+                "dirs": ["./agents"],
+            },
+            "hooks": [{"module": "hooks-logging", "source": "git+logging"}],
+        }
+
+        # Child explicitly resets agents
+        child = {"agents": [], "hooks": []}
+
+        result = merge_profile_dicts(parent, child)
+
+        # Agents reset to empty
+        assert result["agents"]["items"] == []
+        assert result["agents"]["dirs"] is None
+        # Hooks also reset
+        assert result["hooks"] == []
+
+    def test_agents_omitted_inherits_all(self):
+        """Omitting agents key inherits all from parent."""
+        parent = {
+            "agents": {
+                "items": [
+                    {"name": "zen-architect", "source": "git+arch"},
+                    {"name": "bug-hunter", "source": "git+bug"},
+                ],
+                "dirs": ["./agents"],
+            },
+            "tools": [{"module": "tool-bash", "source": "git+bash"}],
+        }
+
+        # Child omits agents entirely
+        child = {"hooks": [{"module": "hooks-logging"}]}
+
+        result = merge_profile_dicts(parent, child)
+
+        # Agents inherited from parent
+        assert len(result["agents"]["items"]) == 2
+        assert result["agents"]["items"][0]["name"] == "zen-architect"
+        assert result["agents"]["items"][1]["name"] == "bug-hunter"
+        assert result["agents"]["dirs"] == ["./agents"]
+
+        # Tools inherited
+        assert len(result["tools"]) == 1
+        # New hooks from child
+        assert len(result["hooks"]) == 1
+
+    def test_agents_items_merge_by_name(self):
+        """Child can add new agents to parent's list."""
+        parent = {
+            "agents": {
+                "items": [
+                    {"name": "zen-architect", "source": "git+arch"},
+                    {"name": "bug-hunter", "source": "git+bug"},
+                ]
+            }
+        }
+
+        # Child adds a new agent
+        child = {"agents": {"items": [{"name": "beads-expert", "source": "git+beads"}]}}
+
+        result = merge_profile_dicts(parent, child)
+
+        # All 3 agents present
+        assert len(result["agents"]["items"]) == 3
+        agent_names = {a["name"] for a in result["agents"]["items"]}
+        assert agent_names == {"zen-architect", "bug-hunter", "beads-expert"}
+
+    def test_agents_include_only_filters(self):
+        """include-only filters agents to only specified names."""
+        parent = {
+            "agents": {
+                "items": [
+                    {"name": "zen-architect", "source": "git+arch"},
+                    {"name": "bug-hunter", "source": "git+bug"},
+                    {"name": "test-coverage", "source": "git+test"},
+                ]
+            }
+        }
+
+        # Child filters to only 2 agents
+        child = {"agents": {"include-only": ["zen-architect", "bug-hunter"]}}
+
+        result = merge_profile_dicts(parent, child)
+
+        # Only 2 agents remain after filtering
+        assert len(result["agents"]["items"]) == 2
+        agent_names = {a["name"] for a in result["agents"]["items"]}
+        assert agent_names == {"zen-architect", "bug-hunter"}
+
+    def test_agents_dirs_append(self):
+        """Child dirs append to parent's dirs."""
+        parent = {"agents": {"items": [], "dirs": ["./agents"]}}
+
+        # Child adds another directory
+        child = {"agents": {"dirs": ["./custom-agents"]}}
+
+        result = merge_profile_dicts(parent, child)
+
+        # Both directories present (deduplicated)
+        assert result["agents"]["dirs"] == ["./agents", "./custom-agents"]
