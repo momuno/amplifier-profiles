@@ -666,3 +666,38 @@ class TestMergeProfileDictsWithExclusions:
         assert result["agents"] == ["agent-a", "agent-b"]
         # Exclude not propagated
         assert "exclude" not in result
+
+    def test_agent_exclude_specific_agents_from_dict(self):
+        """Agent can exclude specific agents when parent agents is a dict (mount plan format)."""
+        # Parent mount plan with agents as dict (post-compilation format)
+        parent = {
+            "agents": {
+                "bug-hunter": {"description": "Bug hunter"},
+                "tdd-specialist": {"description": "TDD specialist"},
+                "sprint-planner": {"description": "Sprint planner"},
+                "post-sprint-cleanup": {"description": "Cleanup"},
+                "convergence-architect": {"description": "Architect"},
+                "issue-capturer": {"description": "Issue capturer"},
+            },
+            "tools": [{"module": "tool-bash"}],
+        }
+
+        # Agent overlay with specific exclusions
+        agent_fragment = {
+            "description": "Issue capturer",
+            "exclude": {
+                "agents": ["tdd-specialist", "sprint-planner", "post-sprint-cleanup", "convergence-architect"]
+            },
+        }
+
+        result = merge_profile_dicts(parent, agent_fragment)
+
+        # Only non-excluded agents remain
+        assert set(result["agents"].keys()) == {"bug-hunter", "issue-capturer"}
+        # Excluded agents removed
+        assert "tdd-specialist" not in result["agents"]
+        assert "sprint-planner" not in result["agents"]
+        # Tools inherited
+        assert len(result["tools"]) == 1
+        # Exclude not propagated
+        assert "exclude" not in result

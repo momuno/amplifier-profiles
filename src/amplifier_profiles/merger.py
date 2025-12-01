@@ -81,8 +81,11 @@ def _apply_exclude_all(result: dict[str, Any], section: str) -> dict[str, Any]:
     if section in ("tools", "hooks", "providers"):
         result[section] = []
     elif section == "agents":
-        # For agents, set to "none" to disable (Smart Single Value format)
-        result[section] = "none"
+        # For agents, handle both formats: list (Smart Single Value) or dict (mount plan)
+        if isinstance(result[section], dict):
+            result[section] = {}
+        else:
+            result[section] = "none"
     else:
         # For other sections, remove entirely
         del result[section]
@@ -96,6 +99,9 @@ def _apply_exclude_list(result: dict[str, Any], section: str, exclusion_list: li
     elif section == "agents" and isinstance(result[section], list):
         # For agents (Smart Single Value format), remove specific agent names from list
         result[section] = [agent for agent in result[section] if agent not in exclusion_list]
+    elif section == "agents" and isinstance(result[section], dict):
+        # For agents as dict (mount plan format), remove specific agent keys
+        result[section] = {k: v for k, v in result[section].items() if k not in exclusion_list}
     return result
 
 
