@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import Field
 
+from .schema import ExclusionValue
 from .schema import ModuleConfig
 
 
@@ -75,6 +76,16 @@ class Agent(BaseModel):
         ),
     )
 
+    # Selective inheritance exclusions (same as Profile.exclude)
+    exclude: dict[str, ExclusionValue] | None = Field(
+        None,
+        description=(
+            "Selective inheritance exclusions applied to parent session when this agent is used. "
+            "Syntax: `section: all` (exclude entire section), `section: [ids]` (exclude specific), "
+            "`section: {nested}` (nested exclusions). Example: `{tools: all, agents: [agent-a]}`"
+        ),
+    )
+
     def to_mount_plan_fragment(self) -> dict[str, Any]:
         """Convert agent to partial mount plan dict (configuration only).
 
@@ -109,5 +120,9 @@ class Agent(BaseModel):
         # Add agents filter if specified (for sub-agent access control)
         if self.agents is not None:
             result["agents"] = self.agents
+
+        # Add exclude if specified (for selective inheritance from parent)
+        if self.exclude is not None:
+            result["exclude"] = self.exclude
 
         return result

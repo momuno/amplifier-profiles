@@ -617,3 +617,52 @@ class TestMergeProfileDictsWithExclusions:
         assert len(result["tools"]) == 1
         assert result["tools"][0]["source"] == "git+bash"
         assert result["tools"][0]["config"] == {"debug": True}
+
+    def test_agent_exclude_specific_agents(self):
+        """Agent can use exclude to remove specific sub-agents from parent session."""
+        # Parent session configuration with multiple agents available
+        parent = {
+            "agents": ["agent-a", "agent-b", "tdd-specialist", "sprint-planner", "post-sprint-cleanup"],
+            "tools": [{"module": "tool-bash"}, {"module": "tool-web"}],
+        }
+
+        # Agent mount plan fragment with exclusions
+        agent_fragment = {
+            "description": "Test agent",
+            "exclude": {
+                "agents": ["tdd-specialist", "sprint-planner", "post-sprint-cleanup"],
+            },
+        }
+
+        result = merge_profile_dicts(parent, agent_fragment)
+
+        # Agents: specified agents excluded
+        assert result["agents"] == ["agent-a", "agent-b"]
+        # Tools: inherited unchanged
+        assert len(result["tools"]) == 2
+        # Exclude not propagated
+        assert "exclude" not in result
+
+    def test_agent_exclude_all_tools(self):
+        """Agent can use exclude to remove all tools from parent session."""
+        parent = {
+            "tools": [{"module": "tool-bash"}, {"module": "tool-web"}, {"module": "tool-filesystem"}],
+            "hooks": [{"module": "hooks-logging"}],
+            "agents": ["agent-a", "agent-b"],
+        }
+
+        # Agent that doesn't need any tools
+        agent_fragment = {
+            "description": "Minimal agent",
+            "exclude": {"tools": "all"},
+        }
+
+        result = merge_profile_dicts(parent, agent_fragment)
+
+        # Tools: all excluded
+        assert result["tools"] == []
+        # Hooks and agents: inherited
+        assert len(result["hooks"]) == 1
+        assert result["agents"] == ["agent-a", "agent-b"]
+        # Exclude not propagated
+        assert "exclude" not in result
